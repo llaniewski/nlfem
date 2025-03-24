@@ -1,17 +1,13 @@
 #include <stdio.h>
 
-typedef size_t ind_t;
-
-int_t *ind;
-
-void DP(ind_t* ind, double* coef, double* x, double* M) {
+void DP(size_t* ind, size_t el, double* coef, double* x, double* M) {
     for (int k=0;k<3;k++) {
-        M[k+0*3] = (1-coef[2])*(-x[3*ind[0]+k]+x[3*ind[1]+k]) + 
-            coef[2]*(-x[3*ind[3]+k]+x[3*ind[4]+k]);
-        M[k+1*3] = (1-coef[2])*(-x[3*ind[0]+k]+x[3*ind[2]+k]) + 
-            coef[2]*(-x[3*ind[3]+k]+x[3*ind[5]+k]);
-        M[k+2*3] = -((1-coef[0]-coef[1])*x[3*ind[0]+k]+coef[0]*x[3*ind[1]+k]+coef[1]*x[3*ind[2]+k]) + 
-            ((1-coef[0]-coef[1])*x[3*ind[3]+k]+coef[0]*x[3*ind[4]+k]+coef[1]*x[3*ind[5]+k]);
+        M[k+0*3] = (1-coef[2])*(-x[3*ind[6*el+0]+k]+x[3*ind[6*el+1]+k]) + 
+            coef[2]*(-x[3*ind[6*el+3]+k]+x[3*ind[6*el+4]+k]);
+        M[k+1*3] = (1-coef[2])*(-x[3*ind[6*el+0]+k]+x[3*ind[6*el+2]+k]) + 
+            coef[2]*(-x[3*ind[6*el+3]+k]+x[3*ind[6*el+5]+k]);
+        M[k+2*3] = -((1-coef[0]-coef[1])*x[3*ind[6*el+0]+k]+coef[0]*x[3*ind[6*el+1]+k]+coef[1]*x[3*ind[6*el+2]+k]) + 
+            ((1-coef[0]-coef[1])*x[3*ind[6*el+3]+k]+coef[0]*x[3*ind[6*el+4]+k]+coef[1]*x[3*ind[6*el+5]+k]);
     }
 }
 
@@ -33,13 +29,13 @@ void inv3(double* m ,double* inv) {
     inv[2+3* 2] = (m[0+3* 0] * m[1+3* 1] - m[1+3* 0] * m[0+3* 1]) * invdet;
 }
 
-void EPS(ind_t* ind, double* coef, double* x0, double* x1, double* eps) {
+void EPS(size_t* ind, size_t el, double* coef, double* x0, double* x1, double* eps) {
     double M0[9];
-    DP(ind, coef, x0, M0);
+    DP(ind, el,coef, x0, M0);
     double M0inv[9];
     inv3(M0,M0inv);
     double M1[9];
-    DP(ind, coef, x1, M1);
+    DP(ind, el,coef, x1, M1);
     double M[9];
     for (int i=0;i<3;i++) {
         
@@ -75,13 +71,13 @@ double HookEnergy(double lam, double gam, double* eps) {
     return lam*a + gam*b;
 }
 
-double Energy(double lam, double gam, ind_t* ind, double* coef, double* x0, double* x1) {
+double Energy(double lam, double gam, size_t* ind, size_t el, double* coef, double* x0, double* x1) {
     double eps[9];
-    EPS(ind, coef, x0, x1, eps);
+    EPS(ind, el, coef, x0, x1, eps);
     return HookEnergy(lam, gam, eps);
 }
 
-double ElementEnergy(double lam, double gam, ind_t* ind, double* x0, double* x1) {
+double ElementEnergy(double lam, double gam, size_t* ind, size_t el, double* x0, double* x1) {
     double energy = 0;
     for(int i=0; i<2; i++) {
         for(int j=0; j<2; j++) if (i+j<2) {
@@ -90,18 +86,21 @@ double ElementEnergy(double lam, double gam, ind_t* ind, double* x0, double* x1)
                 coef[0] = i;
                 coef[1] = j;
                 coef[2] = k;
-                energy += Energy(lam, gam, ind, coef, x0, x1);
+                energy += Energy(lam, gam, ind, el, coef, x0, x1);
             }
         }
     }
     return energy;
 }
 
-double TotalEnergy(double lam, double gam, double* x0, double* x1) {
-    for(int i=0; i<El; i++) {
-
+double TotalEnergy(size_t *ind, size_t el_n, double lam, double gam, double* x0, double* x1) {
+    double energy = 0;
+    for(size_t el=0; el<el_n; el++) {
+        energy += ElementEnergy(lam, gam, ind, el, x0, x1);
     }
+    return energy;
 }
+
 
 
 int main () {
