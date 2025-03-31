@@ -45,13 +45,13 @@ int main () {
             tot_qp[0+3*(i+tri_qn*j)] = tri_qp1[i];
             tot_qp[1+3*(i+tri_qn*j)] = tri_qp2[i];
             tot_qp[2+3*(i+tri_qn*j)] = int_qp[j];
-            tot_qw[i+tri_qn*j] = tri_qw[i] * int_qw[j];
+            tot_qw[i+tri_qn*j] = tri_qw[i] * int_qw[j]/2;
         }
     }
 
 
-    int mx = 2;
-    int my = 2;
+    int mx = 10;
+    int my = 10;
     int pnt_n = mx*my*2;
     int ind_n = (mx-1)*(my-1)*2;
     double * x0 = new double[pnt_n*3];
@@ -74,7 +74,7 @@ int main () {
     for (int i=0;i<pnt_n;i++) {
         x[0+3*i] = x0[0+3*i]*cos(a) - x0[1+3*i]*sin(a);
         x[1+3*i] = x0[0+3*i]*sin(a) + x0[1+3*i]*cos(a);
-        x[2+3*i] = x0[2+3*i]*1.1;
+        x[2+3*i] = x0[2+3*i]*0.9;
     }
     for (int i=0;i<mx-1;i++){
         for (int j=0;j<my-1;j++){
