@@ -33,9 +33,9 @@ int main () {
     double int_qp[] = { -sqrt(3.0/5.0),
                         0.0,
                         sqrt(3.0/5.0)};
-    double int_qw[] = { 5.0/9.0,
-                        8.0/9.0,
-                        5.0/9.0 };
+    double int_qw[] = { 5.0/18.0,
+                        8.0/18.0,
+                        5.0/18.0 };
 
     tot_qn = tri_qn * int_qn;
     tot_qp = new double[3*tot_qn];
