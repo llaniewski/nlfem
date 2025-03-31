@@ -50,28 +50,31 @@ int main () {
     }
 
 
-    int mx = 3;
-    int my = 4;
+    int mx = 2;
+    int my = 2;
     int pnt_n = mx*my*2;
     int ind_n = (mx-1)*(my-1)*2;
     double * x0 = new double[pnt_n*3];
     double * x = new double[pnt_n*3];
     size_t * ind = new size_t[ind_n*6];
+    double LX = 1;
+    double LY = 1;
+    double LZ = 1;
     for (int i=0;i<mx;i++){
         for (int j=0;j<my;j++){
             for (int k=0;k<2;k++){
-                x0[0+3*(i+mx*(j+my*k))] = i;
-                x0[1+3*(i+mx*(j+my*k))] = j;
-                x0[2+3*(i+mx*(j+my*k))] = k;
+                x0[0+3*(i+mx*(j+my*k))] = LX*i/(mx-1);
+                x0[1+3*(i+mx*(j+my*k))] = LY*j/(my-1);
+                x0[2+3*(i+mx*(j+my*k))] = LZ*k;
             }
         }
     }
     for (int i=0;i<3*mx*my*2;i++) x[i] = x0[i];
-    double a = 1;
+    double a = 0;
     for (int i=0;i<pnt_n;i++) {
         x[0+3*i] = x0[0+3*i]*cos(a) - x0[1+3*i]*sin(a);
         x[1+3*i] = x0[0+3*i]*sin(a) + x0[1+3*i]*cos(a);
-        x[2+3*i] = x0[2+3*i]*(1.0+0.1);
+        x[2+3*i] = x0[2+3*i]*1.1;
     }
     for (int i=0;i<mx-1;i++){
         for (int j=0;j<my-1;j++){
@@ -93,7 +96,7 @@ int main () {
     double lam = 1;
     double gam = 1;
     double energy = TotalEnergy(lam, gam, ind, ind_n, x0, x);
-    printf("%lf\n",energy);
+    printf("%lg\n",energy);
 
     return 0;
 }

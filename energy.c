@@ -25,7 +25,7 @@ void DP(size_t* ind, double* coef, double* x, double* M) {
     }
 }
 
-void inv3(double* m ,double* inv) {
+void inv3(double* m ,double* inv, double* det_ptr) {
     double det = m[0+3* 0] * (m[1+3* 1] * m[2+3* 2] - m[2+3* 1] * m[1+3* 2]) -
              m[0+3* 1] * (m[1+3* 0] * m[2+3* 2] - m[1+3* 2] * m[2+3* 0]) +
              m[0+3* 2] * (m[1+3* 0] * m[2+3* 1] - m[1+3* 1] * m[2+3* 0]);
@@ -39,26 +39,33 @@ void inv3(double* m ,double* inv) {
     inv[2+3* 0] = (m[1+3* 0] * m[2+3* 1] - m[2+3* 0] * m[1+3* 1]) * invdet;
     inv[2+3* 1] = (m[2+3* 0] * m[0+3* 1] - m[0+3* 0] * m[2+3* 1]) * invdet;
     inv[2+3* 2] = (m[0+3* 0] * m[1+3* 1] - m[1+3* 0] * m[0+3* 1]) * invdet;
+    det_ptr[0] = det;
 }
 
-void EPS(size_t* ind, double* coef, double* x0, double* x1, double* eps) {
+void EPS(size_t* ind, double* coef, double* x0, double* x1, double* eps, double* det_ptr) {
     double M0[9];
     DP(ind, coef, x0, M0);
     double M0inv[9];
-    inv3(M0,M0inv);
+    inv3(M0, M0inv, det_ptr);
     double M1[9];
     DP(ind, coef, x1, M1);
     double M[9];
+    // $AD II-LOOP
     for (int i=0;i<3;i++) {
+        // $AD II-LOOP
         for (int j=0;j<3;j++) {
             M[i+j*3] = 0;
+            // $AD II-LOOP
             for (int k=0;k<3;k++) M[i+j*3] += M1[i+k*3] * M0inv[k+j*3];
         }
     }
+    // $AD II-LOOP
     for (int i=0;i<3;i++) {
+        // $AD II-LOOP
         for (int j=0;j<3;j++) {
             eps[i+j*3] = 0;
-            for (int k=0;k<3;k++) eps[i+j*3] += M[i+k*3]*M[j+k*3];
+            // $AD II-LOOP
+            for (int k=0;k<3;k++) eps[i+j*3] += M[i+k*3] * M[j+k*3];
         }
         eps[i+i*3] -= 1;
     }
@@ -75,8 +82,9 @@ double HookEnergy(double lam, double gam, double* eps) {
 
 double Energy(double lam, double gam, size_t* ind, double* coef, double* x0, double* x1) {
     double eps[9];
-    EPS(ind, coef, x0, x1, eps);
-    return HookEnergy(lam, gam, eps);
+    double det;
+    EPS(ind, coef, x0, x1, eps, &det);
+    return HookEnergy(lam, gam, eps)*det;
 }
 
 double ElementEnergy(double lam, double gam, size_t* ind, double* x0, double* x1) {
@@ -98,7 +106,7 @@ double TotalEnergy(double lam, double gam, size_t* ind, size_t ind_n, double* x0
     for(size_t i=0; i<ind_n; i++) {
         size_t el_ind[6];
         for (int j=0; j<6; j++) el_ind[j] = ind[j+6*i];
-        energy = ElementEnergy(lam, gam, el_ind, x0, x1);
+        energy += ElementEnergy(lam, gam, el_ind, x0, x1);
     }
     return energy;
 }
