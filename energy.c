@@ -14,7 +14,9 @@ int tot_qn;
 
 // (1-coef[2])*((1-coef[0]-coef[1])*x[3*ind[0]+k]+coef[0]*x[3*ind[1]+k]+coef[1]*x[3*ind[2]+k]) + 
 //    coef[2] *((1-coef[0]-coef[1])*x[3*ind[3]+k]+coef[0]*x[3*ind[4]+k]+coef[1]*x[3*ind[5]+k]);
+
 void DP(size_t* ind, double* coef, double* x, double* M) {
+// $AD II-LOOP
     for (int k=0;k<3;k++) {
         M[k+0*3] = (1-coef[2])*(-x[3*ind[0]+k]+x[3*ind[1]+k]) + 
             coef[2]*(-x[3*ind[3]+k]+x[3*ind[4]+k]);
