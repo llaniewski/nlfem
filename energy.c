@@ -14,9 +14,6 @@ extern int tot_qn;
 extern size_t * ind;
 extern size_t el_n;
 extern double * x0;
-extern double lam;
-extern double gam;
-extern double rho;
 
 void Interpolate(size_t el, double coord[3], double* x, double v[3]) {
     // $AD II-LOOP
@@ -82,26 +79,6 @@ void EPS(size_t el, double coord[3], double* x1, double eps[9], double det[1]) {
         }
         eps[i+i*3] -= 1;
     }
-}
-
-double HookEnergy(double eps[9]) {
-    double a=0,b=0;
-    // $AD II-LOOP
-    for (int i=0;i<3;i++) {
-        // $AD II-LOOP
-        for (int j=0;j<3;j++) a += eps[i+3*j]*eps[i+3*j];
-        b += eps[i+i*3]*eps[i+i*3];
-    }
-    return lam*a + gam*b;
-}
-
-double KineticEnergy(double v[3]) {
-    double a=0;
-    // $AD II-LOOP
-    for (int i=0;i<3;i++) {
-        a += v[i]*v[i];
-    }
-    return rho*a*0.5;
 }
 
 double Energy(size_t el, double coord[3], double coef[3], double* x1, double* v1) {
