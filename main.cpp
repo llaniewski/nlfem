@@ -12,7 +12,7 @@ double gam;
 double rho;
 
 extern "C" {
-    double TotalEnergy(double* x1, double* v1);
+    double TotalEnergy(double coef[3], double* x1, double* v1);
 }
 
 int main () {
@@ -104,7 +104,8 @@ int main () {
     lam = 1;
     gam = 1;
     rho = 1;
-    double energy = TotalEnergy(x,v);
+    double coef[3] = {lam,gam,rho};
+    double energy = TotalEnergy(coef, x,v);
     printf("%lg\n",energy);
 
     return 0;

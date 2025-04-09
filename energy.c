@@ -18,23 +18,23 @@ extern double lam;
 extern double gam;
 extern double rho;
 
-void Interpolate(size_t el, double coef[3], double* x, double v[3]) {
+void Interpolate(size_t el, double coord[3], double* x, double v[3]) {
     // $AD II-LOOP
     for (int k=0;k<3;k++) {
-        v[k] = (1-coef[2])*((1-coef[0]-coef[1])*x[3*ind[0+6*el]+k]+coef[0]*x[3*ind[1+6*el]+k]+coef[1]*x[3*ind[2+6*el]+k]) + 
-                coef[2] *((1-coef[0]-coef[1])*x[3*ind[3+6*el]+k]+coef[0]*x[3*ind[4+6*el]+k]+coef[1]*x[3*ind[5+6*el]+k]);
+        v[k] = (1-coord[2])*((1-coord[0]-coord[1])*x[3*ind[0+6*el]+k]+coord[0]*x[3*ind[1+6*el]+k]+coord[1]*x[3*ind[2+6*el]+k]) + 
+                coord[2] *((1-coord[0]-coord[1])*x[3*ind[3+6*el]+k]+coord[0]*x[3*ind[4+6*el]+k]+coord[1]*x[3*ind[5+6*el]+k]);
     }
 }
 
-void DP(size_t el, double coef[3], double* x, double M[9]) {
+void DP(size_t el, double coord[3], double* x, double M[9]) {
     // $AD II-LOOP
     for (int k=0;k<3;k++) {
-        M[k+0*3] = (1-coef[2])*(-x[3*ind[0+6*el]+k]+x[3*ind[1+6*el]+k]) + 
-            coef[2]*(-x[3*ind[3+6*el]+k]+x[3*ind[4+6*el]+k]);
-        M[k+1*3] = (1-coef[2])*(-x[3*ind[0+6*el]+k]+x[3*ind[2+6*el]+k]) + 
-            coef[2]*(-x[3*ind[3+6*el]+k]+x[3*ind[5+6*el]+k]);
-        M[k+2*3] = -((1-coef[0]-coef[1])*x[3*ind[0+6*el]+k]+coef[0]*x[3*ind[1+6*el]+k]+coef[1]*x[3*ind[2+6*el]+k]) + 
-            ((1-coef[0]-coef[1])*x[3*ind[3+6*el]+k]+coef[0]*x[3*ind[4+6*el]+k]+coef[1]*x[3*ind[5+6*el]+k]);
+        M[k+0*3] = (1-coord[2])*(-x[3*ind[0+6*el]+k]+x[3*ind[1+6*el]+k]) + 
+            coord[2]*(-x[3*ind[3+6*el]+k]+x[3*ind[4+6*el]+k]);
+        M[k+1*3] = (1-coord[2])*(-x[3*ind[0+6*el]+k]+x[3*ind[2+6*el]+k]) + 
+            coord[2]*(-x[3*ind[3+6*el]+k]+x[3*ind[5+6*el]+k]);
+        M[k+2*3] = -((1-coord[0]-coord[1])*x[3*ind[0+6*el]+k]+coord[0]*x[3*ind[1+6*el]+k]+coord[1]*x[3*ind[2+6*el]+k]) + 
+            ((1-coord[0]-coord[1])*x[3*ind[3+6*el]+k]+coord[0]*x[3*ind[4+6*el]+k]+coord[1]*x[3*ind[5+6*el]+k]);
     }
 }
 
@@ -55,14 +55,14 @@ void inv3(double m[9] ,double inv[9], double det_ptr[1]) {
     det_ptr[0] = det;
 }
 
-void EPS(size_t el, double coef[3], double* x1, double eps[9], double det[1]) {
+void EPS(size_t el, double coord[3], double* x1, double eps[9], double det[1]) {
     double M0[9];
     double M0inv[9];
     double M1[9];
     double M[9];
-    DP(el, coef, x0, M0);
+    DP(el, coord, x0, M0);
     inv3(M0, M0inv, det);
-    DP(el, coef, x1, M1);
+    DP(el, coord, x1, M1);
     // $AD II-LOOP
     for (int i=0;i<3;i++) {
         // $AD II-LOOP
@@ -104,33 +104,41 @@ double KineticEnergy(double v[3]) {
     return rho*a*0.5;
 }
 
-double Energy(size_t el, double coef[3], double* x1, double* v1) {
+double Energy(size_t el, double coord[3], double coef[3], double* x1, double* v1) {
     double eps[9];
     double det[1];
     double v[3];
-    EPS(el, coef, x1, eps, det);
-    Interpolate(el, coef, v1, v);
-    return (HookEnergy(eps) + KineticEnergy(v))*det[0];
+    EPS(el, coord, x1, eps, det);
+    Interpolate(el, coord, v1, v);
+    double a=0,b=0,c=0;
+    // $AD II-LOOP
+    for (int i=0;i<3;i++) {
+        // $AD II-LOOP
+        for (int j=0;j<3;j++) a += eps[i+3*j]*eps[i+3*j];
+        b += eps[i+i*3]*eps[i+i*3];
+        c += v[i]*v[i];
+    }
+    return (coef[0]*a+coef[1]*b+coef[2]*c)*det[0];
 }
 
-double ElementEnergy(size_t el, double* x1, double* v1) {
+double ElementEnergy(size_t el, double coef[3], double* x1, double* v1) {
     double energy = 0;
     // $AD II-LOOP
     for (int i=0; i<tot_qn; i++) {
-        double coef[3];
-        coef[0] = tot_qp[0+i*3];
-        coef[1] = tot_qp[1+i*3];
-        coef[2] = tot_qp[2+i*3];
-        energy += tot_qw[i] * Energy(el, coef, x1, v1);
+        double coord[3];
+        coord[0] = tot_qp[0+i*3];
+        coord[1] = tot_qp[1+i*3];
+        coord[2] = tot_qp[2+i*3];
+        energy += tot_qw[i] * Energy(el, coord, coef, x1, v1);
     }
     return energy;
 }
 
-double TotalEnergy(double* x1, double* v1) {
+double TotalEnergy(double coef[3], double* x1, double* v1) {
     double energy = 0;
     // $AD II-LOOP
     for(size_t el=0; el<el_n; el++) {
-        energy += ElementEnergy(el, x1, v1);
+        energy += ElementEnergy(el, coef, x1, v1);
     }
     return energy;
 }
