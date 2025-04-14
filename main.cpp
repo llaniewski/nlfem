@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <math.h>
+#include <functional>
+#include <memory>
 
 double * tot_qp;
 double * tot_qw;
@@ -11,8 +13,138 @@ double lam;
 double gam;
 double rho;
 
+typedef std::vector<double> vec;
+
 extern "C" {
-    double TotalEnergy(double coef[3], double* x1, double* v1);
+    double TotalEnergy(double coef[3], const double* x1, const double* v1);
+    void TotalEnergy_b(double coef[3], const double *x1, double *x1b, const double *v1, double *v1b, double TotalEnergyb);
+    void TotalEnergy_b_d(double coef[3], const double *x1, const double *x1d, double *x1b, 
+        double *x1bd, const double *v1, const double *v1d, double *v1b, double *v1bd, 
+        double TotalEnergyb);
+}
+
+double skal(const vec& a, const vec& b) {
+    size_t n = a.size();
+    double sum = 0;
+    for (int i=0;i<n;i++) sum += a[i]*b[i];
+    return sum;
+}
+
+int Solve_(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int max_iter=100, double eps=1e-6) {
+    size_t n = b.size();
+    static vec r; r.resize(n);
+    static vec Ar; Ar.resize(n);
+    static vec p; p.resize(n);
+    static vec Ap; Ap.resize(n);
+    x.resize(n);
+    for (int iter=0; iter<max_iter; iter++) {
+        mult(x,r);
+        for (size_t i=0;i<n;i++) r[i] = b[i] - r[i];
+        double res = sqrt(skal(r,r));
+        printf("linear %5d res=%lg\n",iter, res);
+        if (res < eps) return iter;
+        if (iter>0) {
+            //mult(r,Ar);
+            double beta = skal(Ap,r) / skal(Ap,p);
+            //double beta = 0;
+            for (size_t i=0;i<n;i++) p[i] = r[i] - beta*p[i];
+        } else {
+            for (size_t i=0;i<n;i++) p[i] = r[i];
+        }
+        mult(p,Ap);
+        double alpha = skal(p,r) / skal(Ap,p);
+        for(size_t i=0;i<n;i++) x[i] = x[i] + alpha*p[i];
+//        for(size_t i=0;i<n;i++) r[i] = r[i] - alpha*Ap[i];
+    }
+    return max_iter;
+}
+
+
+
+int Solve(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int max_iter=10000, double eps=1e-6) {
+    size_t n = b.size();
+    static vec r; r.resize(n);
+    static vec p; p.resize(n);
+    static vec Ap; Ap.resize(n);
+    static vec q; q.resize(n);
+    static vec Aq; Aq.resize(n);
+    for (int iter = 0; iter < max_iter; iter++) {
+        mult(x, r);
+        for (int i = 0; i < n; i++) r[i] = b[i] - r[i];
+        double res = sqrt(skal(r, r));
+        //res_draw(res);
+        printf("res=%lg\n", res);
+        if (res < eps) break;
+        for (int i = 0; i < n; i++) {
+            p[i] = r[i];
+        }
+        if (iter > 0) {
+            mult(p, Ap);
+            mult(q, Aq);
+            double beta = skal(Aq, p) / skal(Aq, q);
+            for (int i = 0; i < n; i++) p[i] = p[i] - q[i] * beta;
+        }
+        mult(p, Ap);
+        //printf("|p|^2=%lg\n",skal(p,p));
+        //printf("|Ap|^2=%lg\n",skal(Ap,Ap));
+        double alpha = skal(p, r) / skal(Ap, p);
+        //printf("alpha=%lg\n",alpha);
+        for (int i = 0; i < n; i++) x[i] = x[i] + p[i]*alpha;
+        for (int i = 0; i < n; i++) q[i] = p[i];
+    }
+}
+
+
+void ODE(double dt, const vec& x1, const vec& v1, vec& x2, vec& v2) {
+    size_t n = x1.size();
+    static vec Lx1;
+    static vec Lv1;
+    static vec Lx2;
+    static vec Lv2;
+    static vec Lx2d;
+    static vec Lv2d;
+    static vec x2d;
+    static vec r;
+    static vec dr;
+    Lx1.resize(n);
+    Lv1.resize(n);
+    Lx2.resize(n);
+    Lv2.resize(n);
+    Lx2d.resize(n);
+    Lv2d.resize(n);
+    x2d.resize(n);
+    r.resize(n);
+    dr.resize(n);
+    
+    x2.resize(n);
+    v2.resize(n);
+
+    double coef[3] = {lam,gam,-rho};
+
+    TotalEnergy_b(coef, x1.data(), Lx1.data(), v1.data(), Lv1.data(), 1);
+    for (int i=0;i<n;i++) x2[i] = x1[i];
+    for (int i=0;i<n;i++) v2[i] = v1[i];
+    for (int iter=0; iter<10; iter++) {
+        for (int i=0;i<n;i++) x2[i] = x1[i] + (v1[i] + v2[i])/2*dt;
+        TotalEnergy_b(coef, x2.data(), Lx2.data(), v2.data(), Lv2.data(), 1);
+        for (int i=0;i<n;i++) r[i] = (Lv2[i]-Lv1[i])/dt - (Lx1[i]+Lv1[i])/2;
+        double res = sqrt(skal(r,r));
+        printf("nonlin %5d res=%lg\n",iter, res);
+        Solve([&coef, &x2, &v2, &dt, &n](const vec& v2d, vec& rd){
+            for (int i = 0; i < n; ++i) x2d[i] = dt*v2d[i]/2;
+            TotalEnergy_b_d(coef, x2.data(), x2d.data(), Lx2.data(), Lx2d.data(), v2.data(), v2d.data(), Lv2.data(), Lv2d.data(), 1.0);
+            for (int i = 0; i < n; ++i) rd[i] = -((0-Lv2d[i])/dt - (0+Lx2d[i])/2);
+            // for (int i = 0; i < n; ++i) rd[i] = 0;
+            // for (int i = 0; i < n-1; ++i) {
+            //     double a = v2d[i+1] - v2d[i];
+            //     rd[i] += -a;
+            //     rd[i+1] += a;
+            // }
+            // rd[0] = v2d[0];
+            // rd[n-1] = v2d[n-1];
+            //for (int i = 0; i < n; ++i) rd[i] = v2d[i];
+        }, r, dr);
+    }
 }
 
 int main () {
@@ -60,53 +192,89 @@ int main () {
     int my = 10;
     int pnt_n = mx*my*2;
     el_n = (mx-1)*(my-1)*2;
-    x0 = new double[pnt_n*3];
-    double * x = new double[pnt_n*3];
-    double * v = new double[pnt_n*3];
-    ind = new size_t[el_n*6];
+
+    vec points;
+    points.resize(pnt_n*3);
     double LX = 1;
     double LY = 1;
     double LZ = 1;
     for (int i=0;i<mx;i++){
         for (int j=0;j<my;j++){
             for (int k=0;k<2;k++){
-                x0[0+3*(i+mx*(j+my*k))] = LX*i/(mx-1);
-                x0[1+3*(i+mx*(j+my*k))] = LY*j/(my-1);
-                x0[2+3*(i+mx*(j+my*k))] = LZ*k;
+                points[0+3*(i+mx*(j+my*k))] = LX*i/(mx-1);
+                points[1+3*(i+mx*(j+my*k))] = LY*j/(my-1);
+                points[2+3*(i+mx*(j+my*k))] = LZ*k;
             }
         }
     }
-    for (int i=0;i<3*mx*my*2;i++) x[i] = x0[i];
-    for (int i=0;i<3*mx*my*2;i++) v[i] = 1.0;
-    double a = 0;
-    for (int i=0;i<pnt_n;i++) {
-        x[0+3*i] = x0[0+3*i]*cos(a) - x0[1+3*i]*sin(a);
-        x[1+3*i] = x0[0+3*i]*sin(a) + x0[1+3*i]*cos(a);
-        x[2+3*i] = x0[2+3*i]*1.0;
-    }
+
+    std::vector<size_t> triangles;
+    triangles.resize(el_n*6);
     for (int i=0;i<mx-1;i++){
         for (int j=0;j<my-1;j++){
-            ind[0+6*(i+(mx-1)*(j+(my-1)*0))] = i+mx*(j+my*0);
-            ind[1+6*(i+(mx-1)*(j+(my-1)*0))] = (i+1)+mx*(j+my*0);
-            ind[2+6*(i+(mx-1)*(j+(my-1)*0))] = i+mx*((j+1)+my*0);
-            ind[3+6*(i+(mx-1)*(j+(my-1)*0))] = i+mx*(j+my*1);
-            ind[4+6*(i+(mx-1)*(j+(my-1)*0))] = (i+1)+mx*(j+my*1);
-            ind[5+6*(i+(mx-1)*(j+(my-1)*0))] = i+mx*((j+1)+my*1);
-            ind[0+6*(i+(mx-1)*(j+(my-1)*1))] = (i+1)+mx*((j+1)+my*0);
-            ind[1+6*(i+(mx-1)*(j+(my-1)*1))] = i+mx*((j+1)+my*0);
-            ind[2+6*(i+(mx-1)*(j+(my-1)*1))] = (i+1)+mx*(j+my*0);
-            ind[3+6*(i+(mx-1)*(j+(my-1)*1))] = (i+1)+mx*((j+1)+my*1);
-            ind[4+6*(i+(mx-1)*(j+(my-1)*1))] = i+mx*((j+1)+my*1);
-            ind[5+6*(i+(mx-1)*(j+(my-1)*1))] = (i+1)+mx*(j+my*1);
+            triangles[0+6*(i+(mx-1)*(j+(my-1)*0))] = i+mx*(j+my*0);
+            triangles[1+6*(i+(mx-1)*(j+(my-1)*0))] = (i+1)+mx*(j+my*0);
+            triangles[2+6*(i+(mx-1)*(j+(my-1)*0))] = i+mx*((j+1)+my*0);
+            triangles[3+6*(i+(mx-1)*(j+(my-1)*0))] = i+mx*(j+my*1);
+            triangles[4+6*(i+(mx-1)*(j+(my-1)*0))] = (i+1)+mx*(j+my*1);
+            triangles[5+6*(i+(mx-1)*(j+(my-1)*0))] = i+mx*((j+1)+my*1);
+            triangles[0+6*(i+(mx-1)*(j+(my-1)*1))] = (i+1)+mx*((j+1)+my*0);
+            triangles[1+6*(i+(mx-1)*(j+(my-1)*1))] = i+mx*((j+1)+my*0);
+            triangles[2+6*(i+(mx-1)*(j+(my-1)*1))] = (i+1)+mx*(j+my*0);
+            triangles[3+6*(i+(mx-1)*(j+(my-1)*1))] = (i+1)+mx*((j+1)+my*1);
+            triangles[4+6*(i+(mx-1)*(j+(my-1)*1))] = i+mx*((j+1)+my*1);
+            triangles[5+6*(i+(mx-1)*(j+(my-1)*1))] = (i+1)+mx*(j+my*1);
         }
+    }
+    
+
+
+    x0 = points.data();
+    ind = triangles.data();
+
+    vec x(pnt_n*3);
+    vec v(pnt_n*3);
+    for (int i=0;i<3*mx*my*2;i++) x[i] = points[i];
+    for (int i=0;i<3*mx*my*2;i++) v[i] = 1.0;
+
+    double a = 0;
+    for (int i=0;i<pnt_n;i++) {
+        x[0+3*i] = points[0+3*i]*cos(a) - points[1+3*i]*sin(a);
+        x[1+3*i] = points[0+3*i]*sin(a) + points[1+3*i]*cos(a);
+        x[2+3*i] = points[2+3*i]*1.1;
     }
     
     lam = 1;
     gam = 1;
     rho = 1;
-    double coef[3] = {lam,gam,rho};
-    double energy = TotalEnergy(coef, x,v);
-    printf("%lg\n",energy);
+    double coef[3] = {lam,gam,-rho};
+    double energy = TotalEnergy(coef, x.data(),v.data());
+    printf("E = %lg\n",energy);
+
+    vec nx(pnt_n*3);
+    vec nv(pnt_n*3);
+    double dt = 0.1;
+    ODE(dt, x, v, nx, nv);
+
+    // size_t n = x.size();
+    // vec b; b.resize(n);
+    // for (int i = 0; i < n; ++i) {
+    //     x[i] = 0;
+    //     b[i] = 1;
+    // }
+
+    // Solve([](const vec& x, vec& r){
+    //     size_t n = x.size();
+    //     for (int i = 0; i < n; ++i) r[i] = 0;
+    //     for (int i = 0; i < n-1; ++i) {
+    //         double a = x[i+1] - x[i];
+    //         r[i] += -a;
+    //         r[i+1] += a;
+    //     }
+    //     r[0] = x[0];
+    //     r[n-1] = x[n-1];
+    // }, b, x);
+
 
     return 0;
 }

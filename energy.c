@@ -11,6 +11,7 @@ void print_mat(double * mat) {
 extern double * tot_qp;
 extern double * tot_qw;
 extern int tot_qn;
+
 extern size_t * ind;
 extern size_t el_n;
 extern double * x0;
