@@ -13,6 +13,7 @@ double * x0;
 double lam;
 double gam;
 double rho;
+char* fix;
 
 typedef std::vector<double> vec;
 
@@ -64,7 +65,7 @@ int Solve_(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int
 
 
 
-int Solve(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int max_iter=100, double eps=1e-6) {
+int Solve(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int max_iter=2000, double eps=1e-6) {
     size_t n = b.size();
     static vec r; r.resize(n);
     static vec p; p.resize(n);
@@ -130,7 +131,7 @@ void PrintMatrix(size_t n, vec& M) {
 }
 
 
-void ODE(double dt, const vec& x1, const vec& v1, vec& x2, vec& v2, int max_iter=100, double eps=1e-6) {
+void ODE(double dt, const vec& x1, const vec& v1, vec& x2, vec& v2, int max_iter=1000, double eps=1e-6) {
     size_t n = x1.size();
     static vec Lx1;
     static vec Lv1;
@@ -164,8 +165,10 @@ TotalEnergy_b(coef, x1.data(), Lx1.data(), v1.data(), Lv1.data(), 1);
         for (int i=0;i<n;i++) Lv2[i] = 0;
         for (int i=0;i<n;i++) Lx2[i] = 0;
         for (int i=0;i<n;i++) x2[i] = x1[i] + (v1[i] + v2[i])/2*dt;
+        for (int i=0;i<n;i++) if (fix[i]) x2[i] = x1[i];
         TotalEnergy_b(coef, x2.data(), Lx2.data(), v2.data(), Lv2.data(), 1);
         for (int i=0;i<n;i++) r[i] = (Lv2[i]-Lv1[i])/dt - (Lx2[i]+Lx1[i])/2;
+        for (int i=0;i<n;i++) if (fix[i]) r[i] = 0;
         double res = sqrt(skal(r,r));
         printf("nonlin %5d res=%lg\n",iter, res);
         if (res < eps) break;
@@ -174,13 +177,15 @@ TotalEnergy_b(coef, x1.data(), Lx1.data(), v1.data(), Lv1.data(), 1);
             for (int i = 0; i < n; ++i) Lv2d[i] = 0;
             // for (int i = 0; i < n; ++i) x2d[i] = 0;
             for (int i = 0; i < n; ++i) x2d[i] = v2d[i]/2*dt;
+            for (int i=0;i<n;i++) if (fix[i]) x2d[i] = 0;
             TotalEnergy_b_d(coef, x2.data(), x2d.data(), Lx2.data(), Lx2d.data(), v2.data(), v2d.data(), Lv2.data(), Lv2d.data(), 1.0);
             for (int i = 0; i < n; ++i) rd[i] = (Lv2d[i])/dt - (Lx2d[i])/2;
+            for (int i=0;i<n;i++) if (fix[i]) rd[i] = 0;
         };
         //vec M;
         //GetMatrix(n,mult,M);
         //PrintMatrix(n,M);
-        Solve(mult, r, dr,10);
+        Solve(mult, r, dr,300);
         for (int i = 0; i < n; ++i) v2[i] = v2[i] - dr[i];
     }
 }
@@ -229,15 +234,20 @@ int main () {
     std::string outpath = "output/";
     std::string name = "box";
 
-    int mx = 21;
-    int my = 2;
+    int mx = 10;
+    int my = 10;
     int pnt_n = mx*my*2;
     el_n = (mx-1)*(my-1)*2;
 
+    std::vector<char> fixed;
+    fixed.resize(pnt_n*3);
+    fix = fixed.data();
+
+
     vec points;
     points.resize(pnt_n*3);
-    double LX = 20;
-    double LY = 1;
+    double LX = 10;
+    double LY = 10;
     double LZ = 1;
     for (int i=0;i<mx;i++){
         for (int j=0;j<my;j++){
@@ -249,6 +259,16 @@ int main () {
         }
     }
 
+    for (int i=0;i<mx;i++){
+        //for (int j=0;j<my;j++){
+        int j=0; {
+            for (int k=0;k<2;k++){
+                fixed[0+3*(i+mx*(j+my*k))] = 1;
+                fixed[1+3*(i+mx*(j+my*k))] = 1;
+                fixed[2+3*(i+mx*(j+my*k))] = 1;
+            }
+        }
+    }
     std::vector<size_t> triangles;
     triangles.resize(el_n*6);
     for (int i=0;i<mx-1;i++){
@@ -279,14 +299,21 @@ int main () {
     for (int i=0;i<3*mx*my*2;i++) v[i] = 0.0;
 
     double a = 0;
+    double R = 30;
     for (int i=0;i<pnt_n;i++) {
-        x[0+3*i] = points[0+3*i]*(1.0-0.1)*cos(a) - points[1+3*i]*sin(a)+1;
-        x[1+3*i] = points[0+3*i]*(1.0-0.1)*sin(a) + points[1+3*i]*cos(a)+1;
-        x[2+3*i] = points[2+3*i];
+        // x[0+3*i] = points[0+3*i]*(1.0-0.0)*cos(a) - points[1+3*i]*sin(a)+1;
+        // x[1+3*i] = points[0+3*i]*(1.0-0.0)*sin(a) + points[1+3*i]*cos(a)+1;
+        
+
+        x[0+3*i] = points[0+3*i];
+        double Rz = R + points[2+3*i] - 0.5;
+        double an = points[1+3*i]/R;
+        x[1+3*i] = Rz*sin(an);
+        x[2+3*i] = Rz*cos(an)-R;
     }
     
     lam = 1;
-    gam = 0;
+    gam = 0.3;
     rho = 1;
     double coef[3] = {lam,gam,-rho};
     double energy = TotalEnergy(coef, x.data(),v.data());
@@ -294,9 +321,9 @@ int main () {
 
     vec nx(pnt_n*3);
     vec nv(pnt_n*3);
-    double dt = 1;
+    double dt = 4;
     int iter = 0;
-    for (double t=0; t<100;t+=dt) {
+    for (double t=0; t<1000;t+=dt) {
         ODE(dt, x, v, nx, nv);
         char str[1024];
         sprintf(str, "%s%s_%08d.vtu", outpath.c_str(), name.c_str(), iter);
