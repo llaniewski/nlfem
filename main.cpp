@@ -130,7 +130,7 @@ void PrintMatrix(size_t n, vec& M) {
 }
 
 
-void ODE(double dt, vec& x1, vec& v1, vec& x2, vec& v2) {
+void ODE(double dt, const vec& x1, const vec& v1, vec& x2, vec& v2, int max_iter=100, double eps=1e-6) {
     size_t n = x1.size();
     static vec Lx1;
     static vec Lv1;
@@ -154,46 +154,34 @@ void ODE(double dt, vec& x1, vec& v1, vec& x2, vec& v2) {
     x2.resize(n);
     v2.resize(n);
 
-    double coef[3] = {lam,gam,-rho};
-    TotalEnergy_b(coef, x1.data(), Lx1.data(), v1.data(), Lv1.data(), 1);
+    double coef[3] = {-lam,-gam,rho};
+    for (int i=0;i<n;i++) Lv1[i] = 0;
+    for (int i=0;i<n;i++) Lx1[i] = 0;
+TotalEnergy_b(coef, x1.data(), Lx1.data(), v1.data(), Lv1.data(), 1);
     for (int i=0;i<n;i++) x2[i] = x1[i];
     for (int i=0;i<n;i++) v2[i] = v1[i];
-    for (int titer=0; titer<30; titer++) {
-        for (int iter=0; iter<30; iter++) {
-            for (int i=0;i<n;i++) Lv2[i] = 0;
-            for (int i=0;i<n;i++) Lx2[i] = 0;
-            for (int i=0;i<n;i++) x2[i] = x1[i] + (v1[i] + v2[i])/2*dt;
-            TotalEnergy_b(coef, x2.data(), Lx2.data(), v2.data(), Lv2.data(), 1);
-            for (int i=0;i<n;i++) r[i] = (Lv2[i]-Lv1[i])/dt - (Lx1[i]+Lv1[i])/2;
-            double res = sqrt(skal(r,r));
-            printf("nonlin %5d res=%lg\n",iter, res);
-            std::function<void(const vec&, vec&)> mult = [&coef, &x2, &v2, &dt, &n](const vec& v2d, vec& rd){
-                for (int i = 0; i < n; ++i) Lx2d[i] = 0;
-                for (int i = 0; i < n; ++i) Lv2d[i] = 0;
-                // for (int i = 0; i < n; ++i) x2d[i] = 0;
-                for (int i = 0; i < n; ++i) x2d[i] = dt*v2d[i]/2;
-                TotalEnergy_b_d(coef, x2.data(), x2d.data(), Lx2.data(), Lx2d.data(), v2.data(), v2d.data(), Lv2.data(), Lv2d.data(), 1.0);
-                // for (int i = 0; i < n; ++i) rd[i] = Lv2d[i];
-                for (int i = 0; i < n; ++i) rd[i] = (0-Lv2d[i])/dt - (0+Lx2d[i])/2;
-                
-                // // for (int i = 0; i < n; ++i) rd[i] = 0;
-                // for (int i = 0; i < n-1; ++i) {
-                //     double a = v2d[i+1] - v2d[i];
-                //     rd[i] += -a;
-                //     rd[i+1] += a;
-                // }
-                // // rd[0] = v2d[0];
-                // rd[n-1] = v2d[n-1];
-                //for (int i = 0; i < n; ++i) rd[i] = v2d[i];
-            };
-            //vec M;
-            //GetMatrix(n,mult,M);
-            //PrintMatrix(n,M);
-            Solve(mult, r, dr);
-            for (int i = 0; i < n; ++i) v2[i] = v2[i] + dr[i];
-        }
-        for (int i=0;i<n;i++) x1[i] = x2[i];
-        for (int i=0;i<n;i++) v1[i] = v2[i];    
+    for (int iter=0; iter<max_iter; iter++) {
+        for (int i=0;i<n;i++) Lv2[i] = 0;
+        for (int i=0;i<n;i++) Lx2[i] = 0;
+        for (int i=0;i<n;i++) x2[i] = x1[i] + (v1[i] + v2[i])/2*dt;
+        TotalEnergy_b(coef, x2.data(), Lx2.data(), v2.data(), Lv2.data(), 1);
+        for (int i=0;i<n;i++) r[i] = (Lv2[i]-Lv1[i])/dt - (Lx2[i]+Lx1[i])/2;
+        double res = sqrt(skal(r,r));
+        printf("nonlin %5d res=%lg\n",iter, res);
+        if (res < eps) break;
+        std::function<void(const vec&, vec&)> mult = [&coef, &x2, &v2, &dt, &n](const vec& v2d, vec& rd){
+            for (int i = 0; i < n; ++i) Lx2d[i] = 0;
+            for (int i = 0; i < n; ++i) Lv2d[i] = 0;
+            // for (int i = 0; i < n; ++i) x2d[i] = 0;
+            for (int i = 0; i < n; ++i) x2d[i] = v2d[i]/2*dt;
+            TotalEnergy_b_d(coef, x2.data(), x2d.data(), Lx2.data(), Lx2d.data(), v2.data(), v2d.data(), Lv2.data(), Lv2d.data(), 1.0);
+            for (int i = 0; i < n; ++i) rd[i] = (Lv2d[i])/dt - (Lx2d[i])/2;
+        };
+        //vec M;
+        //GetMatrix(n,mult,M);
+        //PrintMatrix(n,M);
+        Solve(mult, r, dr,10);
+        for (int i = 0; i < n; ++i) v2[i] = v2[i] - dr[i];
     }
 }
 
@@ -241,14 +229,14 @@ int main () {
     std::string outpath = "output/";
     std::string name = "box";
 
-    int mx = 3;
-    int my = 3;
+    int mx = 21;
+    int my = 2;
     int pnt_n = mx*my*2;
     el_n = (mx-1)*(my-1)*2;
 
     vec points;
     points.resize(pnt_n*3);
-    double LX = 1;
+    double LX = 20;
     double LY = 1;
     double LZ = 1;
     for (int i=0;i<mx;i++){
@@ -288,17 +276,17 @@ int main () {
     vec x(pnt_n*3);
     vec v(pnt_n*3);
     for (int i=0;i<3*mx*my*2;i++) x[i] = points[i];
-    for (int i=0;i<3*mx*my*2;i++) v[i] = 1.0;
+    for (int i=0;i<3*mx*my*2;i++) v[i] = 0.0;
 
     double a = 0;
     for (int i=0;i<pnt_n;i++) {
-        x[0+3*i] = points[0+3*i]*cos(a) - points[1+3*i]*sin(a);
-        x[1+3*i] = points[0+3*i]*sin(a) + points[1+3*i]*cos(a);
-        x[2+3*i] = points[2+3*i]*1.0;
+        x[0+3*i] = points[0+3*i]*(1.0-0.1)*cos(a) - points[1+3*i]*sin(a)+1;
+        x[1+3*i] = points[0+3*i]*(1.0-0.1)*sin(a) + points[1+3*i]*cos(a)+1;
+        x[2+3*i] = points[2+3*i];
     }
     
     lam = 1;
-    gam = 1;
+    gam = 0;
     rho = 1;
     double coef[3] = {lam,gam,-rho};
     double energy = TotalEnergy(coef, x.data(),v.data());
@@ -306,9 +294,9 @@ int main () {
 
     vec nx(pnt_n*3);
     vec nv(pnt_n*3);
-    double dt = 0.01;
+    double dt = 1;
     int iter = 0;
-    for (double t=0; t<0.1;t+=dt) {
+    for (double t=0; t<100;t+=dt) {
         ODE(dt, x, v, nx, nv);
         char str[1024];
         sprintf(str, "%s%s_%08d.vtu", outpath.c_str(), name.c_str(), iter);
