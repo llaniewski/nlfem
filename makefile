@@ -1,6 +1,6 @@
 all: main
 
-main: main.o energy.o energy_b.o energy_b_d.o
+main: main.o energy.o energy_b.o energy_b_d.o vtu_write.o
 	g++ -o $@ $^
 
 energy_b.c: energy.c

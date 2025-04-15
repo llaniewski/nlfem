@@ -2,6 +2,7 @@
 #include <math.h>
 #include <functional>
 #include <memory>
+#include <string>
 
 double * tot_qp;
 double * tot_qw;
@@ -22,6 +23,8 @@ extern "C" {
         double *x1bd, const double *v1, const double *v1d, double *v1b, double *v1bd, 
         double TotalEnergyb);
 }
+
+void write_vtu(char* filename, vec& points, vec& v, std::vector<size_t>& triangles);
 
 double skal(const vec& a, const vec& b) {
     size_t n = a.size();
@@ -61,20 +64,24 @@ int Solve_(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int
 
 
 
-int Solve(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int max_iter=10000, double eps=1e-6) {
+int Solve(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int max_iter=100, double eps=1e-6) {
     size_t n = b.size();
     static vec r; r.resize(n);
     static vec p; p.resize(n);
     static vec Ap; Ap.resize(n);
     static vec q; q.resize(n);
     static vec Aq; Aq.resize(n);
+    double res;
     for (int iter = 0; iter < max_iter; iter++) {
         mult(x, r);
         for (int i = 0; i < n; i++) r[i] = b[i] - r[i];
-        double res = sqrt(skal(r, r));
+        res = sqrt(skal(r, r));
         //res_draw(res);
-        printf("res=%lg\n", res);
-        if (res < eps) break;
+        
+        if (res < eps) {
+            printf("linear %5d iterations converged (%lg)\n", iter, res);
+            return iter;
+        }
         for (int i = 0; i < n; i++) {
             p[i] = r[i];
         }
@@ -92,10 +99,38 @@ int Solve(std::function<void(const vec&, vec&)> mult, const vec& b, vec& x, int 
         for (int i = 0; i < n; i++) x[i] = x[i] + p[i]*alpha;
         for (int i = 0; i < n; i++) q[i] = p[i];
     }
+    printf("linear unconverged final residual=%lg\n", res);
+    return max_iter;
 }
 
 
-void ODE(double dt, const vec& x1, const vec& v1, vec& x2, vec& v2) {
+void GetMatrix(size_t n, std::function<void(const vec&, vec&)> mult, vec& M) {
+    static vec x; x.resize(n);
+    static vec r; r.resize(n);
+    M.resize(n*n);
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) x[j] = 0;
+        x[i] = 1;
+        mult(x, r);
+        for (int j = 0; j < n; j++) M[i+j*n] = r[j];
+    }
+}
+
+void PrintMatrix(size_t n, vec& M) {
+    M.resize(n*n);
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            double a = M[i+j*n];
+            if (fabs(a) < 1e-10) a = 0;
+            printf("%3.3lg", a);
+            if (j<n-1) printf(" ");
+        }
+        printf("\n");
+    }
+}
+
+
+void ODE(double dt, vec& x1, vec& v1, vec& x2, vec& v2) {
     size_t n = x1.size();
     static vec Lx1;
     static vec Lv1;
@@ -120,30 +155,45 @@ void ODE(double dt, const vec& x1, const vec& v1, vec& x2, vec& v2) {
     v2.resize(n);
 
     double coef[3] = {lam,gam,-rho};
-
     TotalEnergy_b(coef, x1.data(), Lx1.data(), v1.data(), Lv1.data(), 1);
     for (int i=0;i<n;i++) x2[i] = x1[i];
     for (int i=0;i<n;i++) v2[i] = v1[i];
-    for (int iter=0; iter<10; iter++) {
-        for (int i=0;i<n;i++) x2[i] = x1[i] + (v1[i] + v2[i])/2*dt;
-        TotalEnergy_b(coef, x2.data(), Lx2.data(), v2.data(), Lv2.data(), 1);
-        for (int i=0;i<n;i++) r[i] = (Lv2[i]-Lv1[i])/dt - (Lx1[i]+Lv1[i])/2;
-        double res = sqrt(skal(r,r));
-        printf("nonlin %5d res=%lg\n",iter, res);
-        Solve([&coef, &x2, &v2, &dt, &n](const vec& v2d, vec& rd){
-            for (int i = 0; i < n; ++i) x2d[i] = dt*v2d[i]/2;
-            TotalEnergy_b_d(coef, x2.data(), x2d.data(), Lx2.data(), Lx2d.data(), v2.data(), v2d.data(), Lv2.data(), Lv2d.data(), 1.0);
-            for (int i = 0; i < n; ++i) rd[i] = -((0-Lv2d[i])/dt - (0+Lx2d[i])/2);
-            // for (int i = 0; i < n; ++i) rd[i] = 0;
-            // for (int i = 0; i < n-1; ++i) {
-            //     double a = v2d[i+1] - v2d[i];
-            //     rd[i] += -a;
-            //     rd[i+1] += a;
-            // }
-            // rd[0] = v2d[0];
-            // rd[n-1] = v2d[n-1];
-            //for (int i = 0; i < n; ++i) rd[i] = v2d[i];
-        }, r, dr);
+    for (int titer=0; titer<30; titer++) {
+        for (int iter=0; iter<30; iter++) {
+            for (int i=0;i<n;i++) Lv2[i] = 0;
+            for (int i=0;i<n;i++) Lx2[i] = 0;
+            for (int i=0;i<n;i++) x2[i] = x1[i] + (v1[i] + v2[i])/2*dt;
+            TotalEnergy_b(coef, x2.data(), Lx2.data(), v2.data(), Lv2.data(), 1);
+            for (int i=0;i<n;i++) r[i] = (Lv2[i]-Lv1[i])/dt - (Lx1[i]+Lv1[i])/2;
+            double res = sqrt(skal(r,r));
+            printf("nonlin %5d res=%lg\n",iter, res);
+            std::function<void(const vec&, vec&)> mult = [&coef, &x2, &v2, &dt, &n](const vec& v2d, vec& rd){
+                for (int i = 0; i < n; ++i) Lx2d[i] = 0;
+                for (int i = 0; i < n; ++i) Lv2d[i] = 0;
+                // for (int i = 0; i < n; ++i) x2d[i] = 0;
+                for (int i = 0; i < n; ++i) x2d[i] = dt*v2d[i]/2;
+                TotalEnergy_b_d(coef, x2.data(), x2d.data(), Lx2.data(), Lx2d.data(), v2.data(), v2d.data(), Lv2.data(), Lv2d.data(), 1.0);
+                // for (int i = 0; i < n; ++i) rd[i] = Lv2d[i];
+                for (int i = 0; i < n; ++i) rd[i] = (0-Lv2d[i])/dt - (0+Lx2d[i])/2;
+                
+                // // for (int i = 0; i < n; ++i) rd[i] = 0;
+                // for (int i = 0; i < n-1; ++i) {
+                //     double a = v2d[i+1] - v2d[i];
+                //     rd[i] += -a;
+                //     rd[i+1] += a;
+                // }
+                // // rd[0] = v2d[0];
+                // rd[n-1] = v2d[n-1];
+                //for (int i = 0; i < n; ++i) rd[i] = v2d[i];
+            };
+            //vec M;
+            //GetMatrix(n,mult,M);
+            //PrintMatrix(n,M);
+            Solve(mult, r, dr);
+            for (int i = 0; i < n; ++i) v2[i] = v2[i] + dr[i];
+        }
+        for (int i=0;i<n;i++) x1[i] = x2[i];
+        for (int i=0;i<n;i++) v1[i] = v2[i];    
     }
 }
 
@@ -188,8 +238,11 @@ int main () {
     }
 
 
-    int mx = 10;
-    int my = 10;
+    std::string outpath = "output/";
+    std::string name = "box";
+
+    int mx = 3;
+    int my = 3;
     int pnt_n = mx*my*2;
     el_n = (mx-1)*(my-1)*2;
 
@@ -241,7 +294,7 @@ int main () {
     for (int i=0;i<pnt_n;i++) {
         x[0+3*i] = points[0+3*i]*cos(a) - points[1+3*i]*sin(a);
         x[1+3*i] = points[0+3*i]*sin(a) + points[1+3*i]*cos(a);
-        x[2+3*i] = points[2+3*i]*1.1;
+        x[2+3*i] = points[2+3*i]*1.0;
     }
     
     lam = 1;
@@ -253,9 +306,19 @@ int main () {
 
     vec nx(pnt_n*3);
     vec nv(pnt_n*3);
-    double dt = 0.1;
-    ODE(dt, x, v, nx, nv);
-
+    double dt = 0.01;
+    int iter = 0;
+    for (double t=0; t<0.1;t+=dt) {
+        ODE(dt, x, v, nx, nv);
+        char str[1024];
+        sprintf(str, "%s%s_%08d.vtu", outpath.c_str(), name.c_str(), iter);
+        write_vtu(str, x, v, triangles);
+        for (int i=0;i<pnt_n*3;i++) {
+            x[i] = nx[i];
+            v[i] = nv[i];
+        }
+        iter++;
+    }
     // size_t n = x.size();
     // vec b; b.resize(n);
     // for (int i = 0; i < n; ++i) {
