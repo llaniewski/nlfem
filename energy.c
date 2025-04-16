@@ -96,7 +96,7 @@ double Energy(size_t el, double coord[3], double coef[3], double* x1, double* v1
         b += eps[i+i*3]*eps[i+i*3];
         c += v[i]*v[i];
     }
-    return (coef[0]*a+coef[1]*b+coef[2]*c)*det[0];
+    return (coef[0]*a+coef[1]*b+coef[2]*c)*fabs(det[0]);
 }
 
 double ElementEnergy(size_t el, double coef[3], double* x1, double* v1) {
